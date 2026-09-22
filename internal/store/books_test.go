@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"path/filepath"
 	"reflect"
@@ -132,8 +131,8 @@ func TestGetBook(t *testing.T) {
 func TestGetBookMissing(t *testing.T) {
 	store := newTestStore(t)
 	_, err := store.GetBook(context.Background(), "missing")
-	if !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("GetBook() error = %v, want sql.ErrNoRows", err)
+	if !errors.Is(err, books.ErrNotFound) {
+		t.Fatalf("GetBook() error = %v, want ErrNotFound", err)
 	}
 }
 
@@ -190,8 +189,8 @@ func TestUpdateBookRejectsStaleVersion(t *testing.T) {
 func TestUpdateBookMissing(t *testing.T) {
 	store := newTestStore(t)
 	book := books.Book{ID: "missing", Version: 2}
-	if err := store.UpdateBook(context.Background(), book, nil); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("UpdateBook() error = %v, want sql.ErrNoRows", err)
+	if err := store.UpdateBook(context.Background(), book, nil); !errors.Is(err, books.ErrNotFound) {
+		t.Fatalf("UpdateBook() error = %v, want ErrNotFound", err)
 	}
 }
 

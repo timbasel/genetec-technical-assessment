@@ -34,13 +34,16 @@ func (s *Store) CreateBook(ctx context.Context, book books.Book, changes []books
 	return nil
 }
 
-var ErrVersionConflict = errors.New("book version conflict")
+var ErrVersionConflict = books.ErrVersionConflict
 
 func (s *Store) GetBook(ctx context.Context, id string) (books.Book, error) {
 	var book books.Book
 	err := scanBook(s.QueryRowContext(ctx, `
 		SELECT id, title, description, publication_date, authors, version, created_at, updated_at
 		FROM books WHERE id = ?`, id), &book)
+	if errors.Is(err, sql.ErrNoRows) {
+		return books.Book{}, fmt.Errorf("get book: %w", books.ErrNotFound)
+	}
 	if err != nil {
 		return books.Book{}, fmt.Errorf("get book: %w", err)
 	}
@@ -55,6 +58,9 @@ func (s *Store) UpdateBook(ctx context.Context, book books.Book, changes []books
 	defer tx.Rollback()
 
 	if err := updateBook(ctx, tx, book); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("update book: %w", books.ErrNotFound)
+		}
 		return fmt.Errorf("update book: %w", err)
 	}
 	for _, change := range changes {
