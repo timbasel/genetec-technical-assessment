@@ -16,10 +16,10 @@ type Book struct {
 	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
-type History struct {
-	ID          string          `json:"id"`
+type Change struct {
+	ID          int64           `json:"id"`
 	BookID      string          `json:"bookID"`
-	OccuredAt   time.Time       `json:"occuredAt"`
+	OccurredAt  time.Time       `json:"occuredAt"`
 	Kind        string          `json:"kind"`
 	Field       string          `json:"field"`
 	OldValue    json.RawMessage `json:"oldValue"`

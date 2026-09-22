@@ -36,13 +36,13 @@ func Open(ctx context.Context, path string) (*Store, error) {
 
 	db, err := sql.Open("sqlite", dsn.String())
 	if err != nil {
-		return nil, fmt.Errorf("open Store: %w", err)
+		return nil, fmt.Errorf("failed to open store: %w", err)
 	}
 	store := &Store{DB: db}
 
 	if err := migrate(ctx, store); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("migrate Store: %w", err)
+		return nil, fmt.Errorf("failed to migrate store: %w", err)
 	}
 
 	return store, nil
@@ -96,4 +96,8 @@ func migrate(ctx context.Context, store *Store) error {
 	}
 
 	return nil
+}
+
+type RowScanner interface {
+	Scan(dest ...any) error
 }
