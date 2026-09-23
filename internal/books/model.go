@@ -1,9 +1,6 @@
 package books
 
-import (
-	"encoding/json"
-	"time"
-)
+import "time"
 
 type Book struct {
 	ID              string    `json:"id"`
@@ -17,14 +14,14 @@ type Book struct {
 }
 
 type Change struct {
-	ID          int64           `json:"id"`
-	BookID      string          `json:"bookID"`
-	OccurredAt  time.Time       `json:"occuredAt"`
-	Kind        string          `json:"kind"`
-	Field       string          `json:"field"`
-	OldValue    json.RawMessage `json:"oldValue"`
-	NewValue    json.RawMessage `json:"newValue"`
-	Description string          `json:"description"`
+	ID          int64     `json:"id"`
+	BookID      string    `json:"bookID"`
+	OccurredAt  time.Time `json:"occuredAt"`
+	Kind        string    `json:"kind"`
+	Field       string    `json:"field"`
+	OldValue    any       `json:"oldValue"`
+	NewValue    any       `json:"newValue"`
+	Description string    `json:"description"`
 }
 
 type Query struct {

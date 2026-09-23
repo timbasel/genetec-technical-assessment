@@ -137,10 +137,19 @@ func insertBook(ctx context.Context, tx *sql.Tx, book books.Book) error {
 func insertChange(ctx context.Context, tx *sql.Tx, bookID string, change books.Change) error {
 	var oldValue any
 	if change.OldValue != nil {
-		oldValue = []byte(change.OldValue)
+		encoded, err := json.Marshal(change.OldValue)
+		if err != nil {
+			return fmt.Errorf("encode old %s value: %w", change.Field, err)
+		}
+		oldValue = encoded
 	}
 
-	_, err := tx.ExecContext(ctx, `
+	newValue, err := json.Marshal(change.NewValue)
+	if err != nil {
+		return fmt.Errorf("encode new %s value: %w", change.Field, err)
+	}
+
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO books_history(book_id, occurred_at, kind, field, old_value, new_value, description)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		bookID,
@@ -148,7 +157,7 @@ func insertChange(ctx context.Context, tx *sql.Tx, bookID string, change books.C
 		change.Kind,
 		change.Field,
 		oldValue,
-		[]byte(change.NewValue),
+		newValue,
 		change.Description,
 	)
 	return err
@@ -202,10 +211,36 @@ func scanBookChange(row RowScanner, change *books.Change) error {
 	}
 
 	change.OccurredAt = time.Unix(0, occurredAt).UTC()
+	var err error
 	if oldValue.Valid {
-		change.OldValue = json.RawMessage(oldValue.String)
+		change.OldValue, err = decodeChangeValue(change.Field, []byte(oldValue.String))
+		if err != nil {
+			return fmt.Errorf("decode old %s value: %w", change.Field, err)
+		}
 	}
-	change.NewValue = json.RawMessage(newValue)
+	change.NewValue, err = decodeChangeValue(change.Field, []byte(newValue))
+	if err != nil {
+		return fmt.Errorf("decode new %s value: %w", change.Field, err)
+	}
 
 	return nil
+}
+
+func decodeChangeValue(field string, value []byte) (any, error) {
+	switch field {
+	case "title", "description", "publication_date":
+		var decoded string
+		if err := json.Unmarshal(value, &decoded); err != nil {
+			return nil, err
+		}
+		return decoded, nil
+	case "authors":
+		var decoded []string
+		if err := json.Unmarshal(value, &decoded); err != nil {
+			return nil, err
+		}
+		return decoded, nil
+	default:
+		return nil, fmt.Errorf("unknown change field %q", field)
+	}
 }

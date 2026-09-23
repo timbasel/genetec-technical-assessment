@@ -2,7 +2,6 @@ package books
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -55,10 +54,7 @@ func (s *Service) CreateBook(ctx context.Context, fields Fields) (Book, error) {
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
-	changes, err := creationChanges(book)
-	if err != nil {
-		return Book{}, err
-	}
+	changes := creationChanges(book)
 	if err := s.store.CreateBook(ctx, book, changes); err != nil {
 		return Book{}, fmt.Errorf("create book: %w", err)
 	}
@@ -79,7 +75,7 @@ func (s *Service) UpdateBook(ctx context.Context, id string, version int64, fiel
 
 	before, err := s.store.GetBook(ctx, id)
 	if err != nil {
-		return Book{}, fmt.Errorf("get book for update: %w", err)
+		return Book{}, fmt.Errorf("failed to get book for update: %w", err)
 	}
 	if before.Version != version {
 		return Book{}, ErrVersionConflict
@@ -100,10 +96,7 @@ func (s *Service) UpdateBook(ctx context.Context, id string, version int64, fiel
 
 	after.Version++
 	after.UpdatedAt = time.Now().UTC()
-	changes, err := updatedChanges(before, after)
-	if err != nil {
-		return Book{}, err
-	}
+	changes := updatedChanges(before, after)
 	if err := s.store.UpdateBook(ctx, after, changes); err != nil {
 		return Book{}, fmt.Errorf("update book: %w", err)
 	}
@@ -111,9 +104,13 @@ func (s *Service) UpdateBook(ctx context.Context, id string, version int64, fiel
 }
 
 func validateFields(fields Fields) error {
-	if strings.TrimSpace(fields.Title) == "" || utf8.RuneCountInString(fields.Title) > 200 {
-		return fmt.Errorf("%w: title must contain 1 to 200 characters", ErrInvalidFields)
+	if strings.TrimSpace(fields.Title) == "" {
+		return fmt.Errorf("%w: title must not be empty", ErrInvalidFields)
 	}
+	if utf8.RuneCountInString(fields.Title) > 200 {
+		return fmt.Errorf("%w: title exceeds 200 characters", ErrInvalidFields)
+	}
+
 	if utf8.RuneCountInString(fields.Description) > 2000 {
 		return fmt.Errorf("%w: description exceeds 2000 characters", ErrInvalidFields)
 	}
@@ -123,8 +120,8 @@ func validateFields(fields Fields) error {
 		return fmt.Errorf("%w: publication date must be YYYY-MM-DD", ErrInvalidFields)
 	}
 
-	if len(fields.Authors) < 1 || len(fields.Authors) > 20 {
-		return fmt.Errorf("%w: provide 1 to 20 authors", ErrInvalidFields)
+	if len(fields.Authors) < 1 {
+		return fmt.Errorf("%w: provide at least 1 author", ErrInvalidFields)
 	}
 	seen := make(map[string]bool, len(fields.Authors))
 	for _, author := range fields.Authors {
@@ -139,7 +136,7 @@ func validateFields(fields Fields) error {
 	return nil
 }
 
-func creationChanges(book Book) ([]Change, error) {
+func creationChanges(book Book) []Change {
 	fields := []struct {
 		name        string
 		value       any
@@ -153,74 +150,65 @@ func creationChanges(book Book) ([]Change, error) {
 
 	changes := make([]Change, 0, len(fields))
 	for _, field := range fields {
-		change, err := newChange(book.ID, book.CreatedAt, "created", field.name, nil, field.value, field.description)
-		if err != nil {
-			return nil, err
-		}
-		changes = append(changes, change)
+		changes = append(changes, Change{
+			BookID:      book.ID,
+			OccurredAt:  book.CreatedAt,
+			Kind:        "created",
+			Field:       field.name,
+			NewValue:    field.value,
+			Description: field.description,
+		})
 	}
-	return changes, nil
+	return changes
 }
 
-func updatedChanges(before, after Book) ([]Change, error) {
+func updatedChanges(before, after Book) []Change {
 	changes := make([]Change, 0, 4)
 	if before.Title != after.Title {
-		change, err := newChange(after.ID, after.UpdatedAt, "updated", "title", before.Title, after.Title,
-			fmt.Sprintf("Title changed from %q to %q", before.Title, after.Title))
-		if err != nil {
-			return nil, err
-		}
-		changes = append(changes, change)
+		changes = append(changes, Change{
+			BookID:      after.ID,
+			OccurredAt:  after.UpdatedAt,
+			Kind:        "updated",
+			Field:       "title",
+			OldValue:    before.Title,
+			NewValue:    after.Title,
+			Description: fmt.Sprintf("Title changed from %q to %q", before.Title, after.Title),
+		})
 	}
 	if before.Description != after.Description {
-		change, err := newChange(after.ID, after.UpdatedAt, "updated", "description", before.Description, after.Description,
-			fmt.Sprintf("Description changed from %q to %q", before.Description, after.Description))
-		if err != nil {
-			return nil, err
-		}
-		changes = append(changes, change)
+		changes = append(changes, Change{
+			BookID:      after.ID,
+			OccurredAt:  after.UpdatedAt,
+			Kind:        "updated",
+			Field:       "description",
+			OldValue:    before.Description,
+			NewValue:    after.Description,
+			Description: fmt.Sprintf("Description changed from %q to %q", before.Description, after.Description),
+		})
 	}
 	if before.PublicationDate != after.PublicationDate {
-		change, err := newChange(after.ID, after.UpdatedAt, "updated", "publication_date", before.PublicationDate, after.PublicationDate,
-			fmt.Sprintf("Publication date changed from %q to %q", before.PublicationDate, after.PublicationDate))
-		if err != nil {
-			return nil, err
-		}
-		changes = append(changes, change)
+		changes = append(changes, Change{
+			BookID:      after.ID,
+			OccurredAt:  after.UpdatedAt,
+			Kind:        "updated",
+			Field:       "publication_date",
+			OldValue:    before.PublicationDate,
+			NewValue:    after.PublicationDate,
+			Description: fmt.Sprintf("Publication date changed from %q to %q", before.PublicationDate, after.PublicationDate),
+		})
 	}
 	if !slices.Equal(before.Authors, after.Authors) {
-		change, err := newChange(after.ID, after.UpdatedAt, "updated", "authors", before.Authors, after.Authors,
-			describeAuthors(before.Authors, after.Authors))
-		if err != nil {
-			return nil, err
-		}
-		changes = append(changes, change)
+		changes = append(changes, Change{
+			BookID:      after.ID,
+			OccurredAt:  after.UpdatedAt,
+			Kind:        "updated",
+			Field:       "authors",
+			OldValue:    before.Authors,
+			NewValue:    after.Authors,
+			Description: describeAuthors(before.Authors, after.Authors),
+		})
 	}
-	return changes, nil
-}
-
-func newChange(bookID string, at time.Time, kind, field string, oldValue, newValue any, description string) (Change, error) {
-	var oldJSON json.RawMessage
-	if oldValue != nil {
-		value, err := json.Marshal(oldValue)
-		if err != nil {
-			return Change{}, fmt.Errorf("encode old %s value: %w", field, err)
-		}
-		oldJSON = value
-	}
-	newJSON, err := json.Marshal(newValue)
-	if err != nil {
-		return Change{}, fmt.Errorf("encode new %s value: %w", field, err)
-	}
-	return Change{
-		BookID:      bookID,
-		OccurredAt:  at,
-		Kind:        kind,
-		Field:       field,
-		OldValue:    oldJSON,
-		NewValue:    newJSON,
-		Description: description,
-	}, nil
+	return changes
 }
 
 func describeAuthors(before, after []string) string {

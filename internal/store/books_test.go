@@ -88,16 +88,16 @@ func TestCreateBook(t *testing.T) {
 
 	changes := []books.Change{
 		{
-			ID: 1, BookID: book.ID, OccurredAt: now, Kind: "created", Field: "title", NewValue: []byte(`"The Hobbit"`), Description: `Title set to "The Hobbit"`,
+			ID: 1, BookID: book.ID, OccurredAt: now, Kind: "created", Field: "title", NewValue: "The Hobbit", Description: `Title set to "The Hobbit"`,
 		},
 		{
-			ID: 2, BookID: book.ID, OccurredAt: now, Kind: "created", Field: "description", NewValue: []byte(`"An adventure in Middle-earth"`), Description: `Description set to "An adventure in Middle-earth"`,
+			ID: 2, BookID: book.ID, OccurredAt: now, Kind: "created", Field: "description", NewValue: "An adventure in Middle-earth", Description: `Description set to "An adventure in Middle-earth"`,
 		},
 		{
-			ID: 3, BookID: book.ID, OccurredAt: now, Kind: "created", Field: "publication_date", NewValue: []byte(`"1937-09-21"`), Description: `Publication date set to "1937-09-21"`,
+			ID: 3, BookID: book.ID, OccurredAt: now, Kind: "created", Field: "publication_date", NewValue: "1937-09-21", Description: `Publication date set to "1937-09-21"`,
 		},
 		{
-			ID: 4, BookID: book.ID, OccurredAt: now, Kind: "created", Field: "authors", NewValue: []byte(`["J.R.R. Tolkien"]`), Description: `Authors set to ["J.R.R. Tolkien"]`,
+			ID: 4, BookID: book.ID, OccurredAt: now, Kind: "created", Field: "authors", NewValue: []string{"J.R.R. Tolkien"}, Description: `Authors set to ["J.R.R. Tolkien"]`,
 		},
 	}
 
@@ -143,10 +143,16 @@ func TestUpdateBook(t *testing.T) {
 	updated.Authors = []string{"J.R.R. Tolkien", "Another Author"}
 	updated.Version = 2
 	updated.UpdatedAt = original.UpdatedAt.Add(time.Hour)
+
 	changes := []books.Change{
-		{ID: 1, BookID: original.ID, OccurredAt: updated.UpdatedAt, Kind: "updated", Field: "title", OldValue: []byte(`"The Hobbitt"`), NewValue: []byte(`"The Hobbit"`), Description: `Title changed from "The Hobbitt" to "The Hobbit"`},
-		{ID: 2, BookID: original.ID, OccurredAt: updated.UpdatedAt, Kind: "updated", Field: "authors", OldValue: []byte(`["J.R.R. Tolkien"]`), NewValue: []byte(`["J.R.R. Tolkien","Another Author"]`), Description: `Author "Another Author" was added`},
+		{
+			ID: 1, BookID: original.ID, OccurredAt: updated.UpdatedAt, Kind: "updated", Field: "title", OldValue: "The Hobbitt", NewValue: "The Hobbit", Description: `Title changed from "The Hobbitt" to "The Hobbit"`,
+		},
+		{
+			ID: 2, BookID: original.ID, OccurredAt: updated.UpdatedAt, Kind: "updated", Field: "authors", OldValue: []string{"J.R.R. Tolkien"}, NewValue: []string{"J.R.R. Tolkien", "Another Author"}, Description: `Author "Another Author" was added`,
+		},
 	}
+
 	if err := store.UpdateBook(context.Background(), updated, changes); err != nil {
 		t.Fatal(err)
 	}
@@ -154,6 +160,7 @@ func TestUpdateBook(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if !reflect.DeepEqual(got, updated) {
 		t.Fatalf("updated book = %+v, want %+v", got, updated)
 	}
@@ -166,13 +173,19 @@ func TestUpdateBookRejectsStaleVersion(t *testing.T) {
 	updated.Title = "The Hobbit"
 	updated.Version = 2
 	updated.UpdatedAt = original.UpdatedAt.Add(time.Hour)
+
 	if err := store.UpdateBook(context.Background(), updated, nil); err != nil {
 		t.Fatal(err)
 	}
 
 	stale := updated
 	stale.Title = "Wrong title"
-	changes := []books.Change{{Kind: "updated", Field: "title", OccurredAt: updated.UpdatedAt, NewValue: []byte(`"Wrong title"`), Description: "Wrong title"}}
+	changes := []books.Change{
+		{
+			Kind: "updated", Field: "title", OccurredAt: updated.UpdatedAt, NewValue: "Wrong title", Description: "Wrong title",
+		},
+	}
+
 	if err := store.UpdateBook(context.Background(), stale, changes); !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("UpdateBook() error = %v, want ErrVersionConflict", err)
 	}
@@ -180,6 +193,7 @@ func TestUpdateBookRejectsStaleVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if !reflect.DeepEqual(got, updated) {
 		t.Fatalf("book after stale update = %+v, want %+v", got, updated)
 	}
@@ -189,6 +203,7 @@ func TestUpdateBookRejectsStaleVersion(t *testing.T) {
 func TestUpdateBookMissing(t *testing.T) {
 	store := newTestStore(t)
 	book := books.Book{ID: "missing", Version: 2}
+
 	if err := store.UpdateBook(context.Background(), book, nil); !errors.Is(err, books.ErrNotFound) {
 		t.Fatalf("UpdateBook() error = %v, want ErrNotFound", err)
 	}
@@ -200,10 +215,16 @@ func TestUpdateBookRollsBackWhenChangeInsertFails(t *testing.T) {
 	updated.Title = "The Hobbit"
 	updated.Version = 2
 	updated.UpdatedAt = original.UpdatedAt.Add(time.Hour)
+
 	changes := []books.Change{
-		{Kind: "updated", Field: "title", OccurredAt: updated.UpdatedAt, NewValue: []byte(`"The Hobbit"`), Description: "Title changed"},
-		{Kind: "updated", Field: "invalid", OccurredAt: updated.UpdatedAt, NewValue: []byte(`"bad"`), Description: "Invalid change"},
+		{
+			Kind: "updated", Field: "title", OccurredAt: updated.UpdatedAt, NewValue: "The Hobbit", Description: "Title changed",
+		},
+		{
+			Kind: "updated", Field: "description", OccurredAt: updated.UpdatedAt, NewValue: func() {}, Description: "Invalid change",
+		},
 	}
+
 	if err := store.UpdateBook(context.Background(), updated, changes); err == nil {
 		t.Fatal("UpdateBook() error = nil")
 	}
@@ -211,6 +232,7 @@ func TestUpdateBookRollsBackWhenChangeInsertFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if !reflect.DeepEqual(got, original) {
 		t.Fatalf("book after failed update = %+v, want %+v", got, original)
 	}
