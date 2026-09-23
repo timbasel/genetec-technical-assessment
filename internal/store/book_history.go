@@ -11,11 +11,14 @@ import (
 )
 
 func (s *Store) GetBookHistory(ctx context.Context, bookID string, query books.Query) (books.Page, error) {
-	if query.Limit < 1 || query.Limit > 100 || query.Offset < 0 {
-		return books.Page{}, fmt.Errorf("%w: invalid history pagination", books.ErrInvalidFields)
+	if query.Limit < 1 || query.Limit > 100 {
+		return books.Page{}, fmt.Errorf("%w: limit must be between 1 to 100", books.ErrInvalidHistoryQuery)
+	}
+	if query.Offset < 0 {
+		return books.Page{}, fmt.Errorf("%w: offset must be positiv", books.ErrInvalidHistoryQuery)
 	}
 	if query.Order != "asc" && query.Order != "desc" {
-		return books.Page{}, fmt.Errorf("%w: invalid history order", books.ErrInvalidFields)
+		return books.Page{}, fmt.Errorf("%w: order must be asc or desc", books.ErrInvalidHistoryQuery)
 	}
 
 	tx, err := s.BeginTx(ctx, nil)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -195,6 +196,89 @@ func TestServiceMissingBook(t *testing.T) {
 	_, err = service.UpdateBook(context.Background(), "missing", 1, testFields())
 	if !errors.Is(err, books.ErrNotFound) {
 		t.Fatalf("UpdateBook() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestServiceGetBookHistory(t *testing.T) {
+	service, _ := testService(t)
+	ctx := context.Background()
+	book, err := service.CreateBook(ctx, testFields())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := service.GetBookHistory(ctx, book.ID, books.Query{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 4 || page.Limit != 20 || page.Offset != 0 || len(page.Items) != 4 ||
+		page.Items[0].ID != 4 || page.Items[0].Field != "authors" || page.Items[3].ID != 1 {
+		t.Fatalf("default history page = %+v", page)
+	}
+
+	page, err = service.GetBookHistory(ctx, book.ID, books.Query{
+		Limit: 1, Offset: 0, Kind: "created", Field: "title",
+		From: &book.CreatedAt, To: &book.CreatedAt, Order: "asc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || page.Limit != 1 || len(page.Items) != 1 || page.Items[0].ID != 1 || page.Items[0].NewValue != book.Title {
+		t.Fatalf("filtered history page = %+v", page)
+	}
+
+	min := time.Unix(0, math.MinInt64)
+	max := time.Unix(0, math.MaxInt64)
+	page, err = service.GetBookHistory(ctx, book.ID, books.Query{From: &min, To: &max})
+	if err != nil || page.Total != 4 {
+		t.Fatalf("boundary history page = %+v, error = %v", page, err)
+	}
+}
+
+func TestServiceGetBookHistoryRejectsInvalidQueries(t *testing.T) {
+	service, _ := testService(t)
+	min := time.Unix(0, math.MinInt64).UTC()
+	max := time.Unix(0, math.MaxInt64).UTC()
+	from := time.Date(2026, time.September, 25, 0, 0, 0, 0, time.UTC)
+	to := from.Add(-time.Second)
+	tests := []struct {
+		name  string
+		query books.Query
+	}{
+		{"negative limit", books.Query{Limit: -1}},
+		{"excessive limit", books.Query{Limit: 101}},
+		{"negative offset", books.Query{Offset: -1}},
+		{"invalid order", books.Query{Order: "random"}},
+		{"invalid kind", books.Query{Kind: "deleted"}},
+		{"invalid field", books.Query{Field: "version"}},
+		{"from outside timestamp range", books.Query{From: timePtr(min.Add(-time.Nanosecond))}},
+		{"to outside timestamp range", books.Query{To: timePtr(max.Add(time.Nanosecond))}},
+		{"reversed range", books.Query{From: &from, To: &to}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := service.GetBookHistory(context.Background(), "missing", tt.query)
+			if !errors.Is(err, books.ErrInvalidHistoryQuery) {
+				t.Fatalf("GetBookHistory(%+v) error = %v, want ErrInvalidHistoryQuery", tt.query, err)
+			}
+		})
+	}
+}
+
+func timePtr(at time.Time) *time.Time { return &at }
+
+func TestServiceGetBookHistoryMissingBookAndContext(t *testing.T) {
+	service, _ := testService(t)
+	_, err := service.GetBookHistory(context.Background(), "missing", books.Query{})
+	if !errors.Is(err, books.ErrNotFound) {
+		t.Fatalf("GetBookHistory(missing) error = %v, want ErrNotFound", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = service.GetBookHistory(ctx, "missing", books.Query{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("GetBookHistory(canceled) error = %v, want context.Canceled", err)
 	}
 }
 

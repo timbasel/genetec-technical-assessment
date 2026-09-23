@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -12,9 +13,10 @@ import (
 )
 
 var (
-	ErrInvalidFields   = errors.New("invalid book fields")
-	ErrNotFound        = errors.New("book not found")
-	ErrVersionConflict = errors.New("book version conflict")
+	ErrInvalidFields       = errors.New("invalid book fields")
+	ErrInvalidHistoryQuery = errors.New("invalid history query")
+	ErrNotFound            = errors.New("book not found")
+	ErrVersionConflict     = errors.New("book version conflict")
 )
 
 type Fields struct {
@@ -28,6 +30,7 @@ type Store interface {
 	CreateBook(context.Context, Book, []Change) error
 	GetBook(context.Context, string) (Book, error)
 	UpdateBook(context.Context, Book, []Change) error
+	GetBookHistory(context.Context, string, Query) (Page, error)
 }
 
 type Service struct {
@@ -101,6 +104,47 @@ func (s *Service) UpdateBook(ctx context.Context, id string, version int64, fiel
 		return Book{}, fmt.Errorf("update book: %w", err)
 	}
 	return after, nil
+}
+
+func (s *Service) GetBookHistory(ctx context.Context, id string, query Query) (Page, error) {
+	if query.Limit == 0 {
+		query.Limit = 20
+	}
+	if query.Limit < 1 || query.Limit > 100 || query.Offset < 0 {
+		return Page{}, fmt.Errorf("%w: limit must be 1 to 100 and offset must be non-negative", ErrInvalidHistoryQuery)
+	}
+	if query.Order == "" {
+		query.Order = "desc"
+	}
+	if query.Order != "asc" && query.Order != "desc" {
+		return Page{}, fmt.Errorf("%w: order must be asc or desc", ErrInvalidHistoryQuery)
+	}
+	if query.Kind != "" && query.Kind != "created" && query.Kind != "updated" {
+		return Page{}, fmt.Errorf("%w: kind must be created or updated", ErrInvalidHistoryQuery)
+	}
+	switch query.Field {
+	case "", "title", "description", "publication_date", "authors":
+	default:
+		return Page{}, fmt.Errorf("%w: invalid field", ErrInvalidHistoryQuery)
+	}
+
+	minTime := time.Unix(0, math.MinInt64)
+	maxTime := time.Unix(0, math.MaxInt64)
+	if query.From != nil && (query.From.Before(minTime) || query.From.After(maxTime)) {
+		return Page{}, fmt.Errorf("%w: from is outside the supported timestamp range", ErrInvalidHistoryQuery)
+	}
+	if query.To != nil && (query.To.Before(minTime) || query.To.After(maxTime)) {
+		return Page{}, fmt.Errorf("%w: to is outside the supported timestamp range", ErrInvalidHistoryQuery)
+	}
+	if query.From != nil && query.To != nil && query.From.After(*query.To) {
+		return Page{}, fmt.Errorf("%w: from must not be after to", ErrInvalidHistoryQuery)
+	}
+
+	page, err := s.store.GetBookHistory(ctx, id, query)
+	if err != nil {
+		return Page{}, fmt.Errorf("get book history: %w", err)
+	}
+	return page, nil
 }
 
 func validateFields(fields Fields) error {

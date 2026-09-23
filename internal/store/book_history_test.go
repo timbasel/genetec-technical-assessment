@@ -156,8 +156,8 @@ func TestGetBookHistoryRejectsInvalidPaginationAndOrder(t *testing.T) {
 		{Limit: 20, Order: "desc; DROP TABLE books"},
 	} {
 		_, err := store.GetBookHistory(context.Background(), book.ID, query)
-		if !errors.Is(err, books.ErrInvalidFields) {
-			t.Fatalf("GetBookHistory(%+v) error = %v, want ErrInvalidFields", query, err)
+		if !errors.Is(err, books.ErrInvalidHistoryQuery) {
+			t.Fatalf("GetBookHistory(%+v) error = %v, want ErrInvalidHistoryQuery", query, err)
 		}
 	}
 }
