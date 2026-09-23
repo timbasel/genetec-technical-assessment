@@ -35,4 +35,8 @@ type Query struct {
 }
 
 type Page struct {
+	Items  []Change `json:"items"`
+	Total  int      `json:"total"`
+	Limit  int      `json:"limit"`
+	Offset int      `json:"offset"`
 }
