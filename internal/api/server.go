@@ -4,7 +4,7 @@ package api
 
 import (
 	"database/sql"
-	_ "embed"
+	"embed"
 	"log"
 	"net/http"
 
@@ -20,32 +20,20 @@ func NewServer(db *sql.DB, booksService *books.Service) *Server {
 	return &Server{db: db, books: booksService}
 }
 
-func (Server) GetBook(w http.ResponseWriter, r *http.Request, id BookID) {
+func (s *Server) GetBook(w http.ResponseWriter, r *http.Request, id BookID) {
 	log.Fatal("Unimplemented")
 }
 
-func (Server) CreateBook(w http.ResponseWriter, r *http.Request) {
+func (s *Server) CreateBook(w http.ResponseWriter, r *http.Request) {
 	log.Fatal("Unimplemented")
 }
 
-func (Server) UpdateBook(w http.ResponseWriter, r *http.Request, id BookID) {
+func (s *Server) UpdateBook(w http.ResponseWriter, r *http.Request, id BookID) {
 	log.Fatal("Unimplemented")
 }
 
-func (Server) GetBookHistory(w http.ResponseWriter, r *http.Request, id BookID, history GetBookHistoryParams) {
+func (s *Server) GetBookHistory(w http.ResponseWriter, r *http.Request, id BookID, history GetBookHistoryParams) {
 	log.Fatal("Unimplemented")
-}
-
-func (Server) GetDocs(w http.ResponseWriter, r *http.Request) {
-	log.Fatal("Unimplemented")
-}
-
-//go:embed openapi.yaml
-var OpenAPISpec []byte
-
-func (Server) GetOpenAPISpec(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/yaml")
-	w.Write(OpenAPISpec)
 }
 
 func (s *Server) Health(w http.ResponseWriter, r *http.Request) {
@@ -54,4 +42,25 @@ func (s *Server) Health(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+//go:embed openapi.yaml
+var OpenAPISpec []byte
+
+func (s *Server) GetOpenAPISpec(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/yaml")
+	w.Write(OpenAPISpec)
+}
+
+//go:embed docs/*
+var docs embed.FS
+
+func (s *Server) GetDocs(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/docs/", http.StatusMovedPermanently)
+}
+
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("GET /docs/", http.FileServerFS(docs))
+	return HandlerFromMux(s, mux)
 }
