@@ -1,0 +1,353 @@
+openapi: 3.1.2
+info:
+  title: Book-keeping Service
+  version: 1.0.0
+  description: |-
+    A small Go backend service to manage books and keeps a history of changes made to them.
+    Build for the technical assessment at Genetec.
+  contact:
+    name: Tim Basel
+    email: tim@basel.digital
+  license:
+    name: MIT
+    identifier: MIT
+
+servers:
+  - url: /
+
+security: []
+
+tags:
+  - name: Books
+    description: Book management and change history
+  - name: System
+    description: Health and documentation
+
+paths:
+  /books:
+    post:
+      operationId: CreateBook
+      summary: Create a new book
+      tags: [Books]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookFields"
+            example:
+              title: The Hobbit
+              description: An adventure in Middle-earth
+              publication_date: "1937-09-21"
+              authors: [J.R.R. Tolkien]
+      responses:
+        "201":
+          description: Book created
+          headers:
+            Location:
+              description: URL of the new book
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Book" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /books/{id}:
+    parameters:
+      - $ref: "#/components/parameters/BookID"
+    get:
+      operationId: GetBook
+      summary: Retrieve a book
+      tags: [Books]
+      responses:
+        "200":
+          description: Book
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Book" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    put:
+      operationId: UpdateBook
+      summary: Update an existing book
+      tags: [Books]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateBookRequest" }
+            example:
+              title: The Hobbit
+              description: An adventure in Middle-earth
+              publication_date: "1937-09-21"
+              authors: [J.R.R. Tolkien]
+              version: 1
+      responses:
+        "200":
+          description: Updated book
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Book" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /books/{id}/history:
+    parameters:
+      - $ref: "#/components/parameters/BookID"
+    get:
+      operationId: GetBookHistory
+      summary: Get the history of changes made to the book
+      tags: [Books]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: kind
+          in: query
+          schema: { type: string, enum: [created, updated] }
+        - name: field
+          in: query
+          schema:
+            {
+              type: string,
+              enum: [title, description, publication_date, authors],
+            }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - name: order
+          in: query
+          schema: { type: string, enum: [asc, desc], default: desc }
+      responses:
+        "200":
+          description: Filtered history page ordered by timestamp and then entry ID
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HistoryPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /healthz:
+    get:
+      operationId: Health
+      summary: Check service health
+      tags: [System]
+      responses:
+        "200": { description: Healthy }
+        "4XX": { $ref: "#/components/responses/ClientError" }
+        "503": { description: Database unavailable }
+
+  /openapi.yaml:
+    get:
+      operationId: GetOpenAPISpec
+      summary: Retrieve the OpenAPI spec
+      tags: [System]
+      responses:
+        "200":
+          description: OpenAPI YAML
+          content:
+            application/yaml:
+              schema: { type: string }
+        "4XX": { $ref: "#/components/responses/ClientError" }
+
+  /docs:
+    get:
+      operationId: GetDocs
+      summary: Open interactive API UI
+      tags: [System]
+      responses:
+        "200":
+          description: Interactive API UI
+          content:
+            text/html:
+              schema: { type: string }
+        "4XX": { $ref: "#/components/responses/ClientError" }
+
+components:
+  parameters:
+    BookID:
+      name: id
+      in: path
+      required: true
+      schema: { $ref: "#/components/schemas/BookID" }
+
+  schemas:
+    BookID:
+      type: string
+      format: uuid
+
+    BookTitle:
+      type: string
+      minLength: 1
+      maxLength: 200
+
+    BookDescription:
+      type: string
+      maxLength: 2000
+
+    PublicationDate:
+      type: string
+      format: date
+
+    Authors:
+      type: array
+      minItems: 1
+      maxItems: 20
+      uniqueItems: true
+      items: { type: string, minLength: 1, maxLength: 200 }
+
+    BookVersion:
+      type: integer
+      format: int64
+      minimum: 1
+
+    BookFields:
+      type: object
+      additionalProperties: false
+      required: [title, description, publication_date, authors]
+      properties:
+        title: { $ref: "#/components/schemas/BookTitle" }
+        description: { $ref: "#/components/schemas/BookDescription" }
+        publication_date: { $ref: "#/components/schemas/PublicationDate" }
+        authors: { $ref: "#/components/schemas/Authors" }
+
+    UpdateBookRequest:
+      type: object
+      additionalProperties: false
+      required: [title, description, publication_date, authors, version]
+      properties:
+        title: { $ref: "#/components/schemas/BookTitle" }
+        description: { $ref: "#/components/schemas/BookDescription" }
+        publication_date: { $ref: "#/components/schemas/PublicationDate" }
+        authors:
+          $ref: "#/components/schemas/Authors"
+          description: Complete ordered author list
+        version:
+          $ref: "#/components/schemas/BookVersion"
+          description: Last version retrieved by the client
+
+    Book:
+      type: object
+      required:
+        [
+          id,
+          title,
+          description,
+          publication_date,
+          authors,
+          version,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        id: { $ref: "#/components/schemas/BookID" }
+        title: { $ref: "#/components/schemas/BookTitle" }
+        description: { $ref: "#/components/schemas/BookDescription" }
+        publication_date: { $ref: "#/components/schemas/PublicationDate" }
+        authors: { $ref: "#/components/schemas/Authors" }
+        version: { $ref: "#/components/schemas/BookVersion" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    HistoryValue:
+      description: A book field value
+      anyOf:
+        - $ref: "#/components/schemas/BookTitle"
+        - $ref: "#/components/schemas/BookDescription"
+        - $ref: "#/components/schemas/PublicationDate"
+        - $ref: "#/components/schemas/Authors"
+
+    HistoryEntry:
+      type: object
+      required: [id, book_id, occurred_at, kind, field, old, new, description]
+      properties:
+        id: { type: integer, format: int64 }
+        book_id: { $ref: "#/components/schemas/BookID" }
+        occurred_at: { type: string, format: date-time }
+        kind: { type: string, enum: [created, updated] }
+        field:
+          {
+            type: string,
+            enum: [title, description, publication_date, authors],
+          }
+        old:
+          description: Previous JSON value, null for initial creation
+          oneOf:
+            - $ref: "#/components/schemas/HistoryValue"
+            - type: "null"
+        new:
+          $ref: "#/components/schemas/HistoryValue"
+          description: New JSON value
+        description:
+          {
+            type: string,
+            description: Human-readable text frozen at write time,
+          }
+
+    HistoryPage:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/HistoryEntry" }
+        total: { type: integer, minimum: 0 }
+        limit: { type: integer, minimum: 1, maximum: 100 }
+        offset: { type: integer, minimum: 0 }
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+
+  responses:
+    ClientError:
+      description: Client request cannot be processed
+
+    BadRequest:
+      description: Invalid JSON, required field, or query value
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+    NotFound:
+      description: Book does not exist
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+    Conflict:
+      description: Stale book version
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+    TooLarge:
+      description: Request body exceeds 1 MiB
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
