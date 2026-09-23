@@ -78,7 +78,7 @@ func (s *Store) UpdateBook(ctx context.Context, book books.Book, changes []books
 func updateBook(ctx context.Context, tx *sql.Tx, book books.Book) error {
 	authors, err := json.Marshal(book.Authors)
 	if err != nil {
-		return fmt.Errorf("encode authors: %w", err)
+		return fmt.Errorf("encode `authors`: %w", err)
 	}
 
 	result, err := tx.ExecContext(ctx, `
@@ -116,7 +116,7 @@ func updateBook(ctx context.Context, tx *sql.Tx, book books.Book) error {
 func insertBook(ctx context.Context, tx *sql.Tx, book books.Book) error {
 	authors, err := json.Marshal(book.Authors)
 	if err != nil {
-		return fmt.Errorf("encode authors: %w", err)
+		return fmt.Errorf("encode `authors`: %w", err)
 	}
 
 	_, err = tx.ExecContext(ctx, `
@@ -139,14 +139,14 @@ func insertChange(ctx context.Context, tx *sql.Tx, bookID string, change books.C
 	if change.OldValue != nil {
 		encoded, err := json.Marshal(change.OldValue)
 		if err != nil {
-			return fmt.Errorf("encode old %s value: %w", change.Field, err)
+			return fmt.Errorf("encode old `%s` value: %w", change.Field, err)
 		}
 		oldValue = encoded
 	}
 
 	newValue, err := json.Marshal(change.NewValue)
 	if err != nil {
-		return fmt.Errorf("encode new %s value: %w", change.Field, err)
+		return fmt.Errorf("encode new `%s` value: %w", change.Field, err)
 	}
 
 	_, err = tx.ExecContext(ctx, `
@@ -184,7 +184,7 @@ func scanBook(row RowScanner, book *books.Book) error {
 	var err error
 	err = json.Unmarshal(authors, &book.Authors)
 	if err != nil {
-		return fmt.Errorf("failed to decode authors: %w", err)
+		return fmt.Errorf("failed to decode `authors`: %w", err)
 	}
 	book.CreatedAt = time.Unix(0, createdAt).UTC()
 	book.UpdatedAt = time.Unix(0, updatedAt).UTC()
@@ -215,12 +215,12 @@ func scanBookChange(row RowScanner, change *books.Change) error {
 	if oldValue.Valid {
 		change.OldValue, err = decodeChangeValue(change.Field, []byte(oldValue.String))
 		if err != nil {
-			return fmt.Errorf("decode old %s value: %w", change.Field, err)
+			return fmt.Errorf("decode old `%s` value: %w", change.Field, err)
 		}
 	}
 	change.NewValue, err = decodeChangeValue(change.Field, []byte(newValue))
 	if err != nil {
-		return fmt.Errorf("decode new %s value: %w", change.Field, err)
+		return fmt.Errorf("decode new `%s` value: %w", change.Field, err)
 	}
 
 	return nil
@@ -241,6 +241,6 @@ func decodeChangeValue(field string, value []byte) (any, error) {
 		}
 		return decoded, nil
 	default:
-		return nil, fmt.Errorf("unknown change field %q", field)
+		return nil, fmt.Errorf("unknown `field` value %q", field)
 	}
 }

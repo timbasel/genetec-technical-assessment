@@ -73,7 +73,7 @@ func (s *Service) UpdateBook(ctx context.Context, id string, version int64, fiel
 		return Book{}, err
 	}
 	if version < 1 {
-		return Book{}, fmt.Errorf("%w: version must be positive", ErrInvalidFields)
+		return Book{}, fmt.Errorf("%w: `version` must be positive", ErrInvalidFields)
 	}
 
 	before, err := s.store.GetBook(ctx, id)
@@ -110,34 +110,37 @@ func (s *Service) GetBookHistory(ctx context.Context, id string, query Query) (P
 	if query.Limit == 0 {
 		query.Limit = 20
 	}
-	if query.Limit < 1 || query.Limit > 100 || query.Offset < 0 {
-		return Page{}, fmt.Errorf("%w: limit must be 1 to 100 and offset must be non-negative", ErrInvalidHistoryQuery)
+	if query.Limit < 1 || query.Limit > 100 {
+		return Page{}, fmt.Errorf("%w: `limit` must be between 1 and 100", ErrInvalidHistoryQuery)
+	}
+	if query.Offset < 0 {
+		return Page{}, fmt.Errorf("%w: `offset` must be non-negative", ErrInvalidHistoryQuery)
 	}
 	if query.Order == "" {
 		query.Order = "desc"
 	}
 	if query.Order != "asc" && query.Order != "desc" {
-		return Page{}, fmt.Errorf("%w: order must be asc or desc", ErrInvalidHistoryQuery)
+		return Page{}, fmt.Errorf("%w: `order` must be asc or desc", ErrInvalidHistoryQuery)
 	}
 	if query.Kind != "" && query.Kind != "created" && query.Kind != "updated" {
-		return Page{}, fmt.Errorf("%w: kind must be created or updated", ErrInvalidHistoryQuery)
+		return Page{}, fmt.Errorf("%w: `kind` must be created or updated", ErrInvalidHistoryQuery)
 	}
 	switch query.Field {
 	case "", "title", "description", "publication_date", "authors":
 	default:
-		return Page{}, fmt.Errorf("%w: invalid field", ErrInvalidHistoryQuery)
+		return Page{}, fmt.Errorf("%w: invalid `field`", ErrInvalidHistoryQuery)
 	}
 
 	minTime := time.Unix(0, math.MinInt64)
 	maxTime := time.Unix(0, math.MaxInt64)
 	if query.From != nil && (query.From.Before(minTime) || query.From.After(maxTime)) {
-		return Page{}, fmt.Errorf("%w: from is outside the supported timestamp range", ErrInvalidHistoryQuery)
+		return Page{}, fmt.Errorf("%w: `from` is outside the supported timestamp range", ErrInvalidHistoryQuery)
 	}
 	if query.To != nil && (query.To.Before(minTime) || query.To.After(maxTime)) {
-		return Page{}, fmt.Errorf("%w: to is outside the supported timestamp range", ErrInvalidHistoryQuery)
+		return Page{}, fmt.Errorf("%w: `to` is outside the supported timestamp range", ErrInvalidHistoryQuery)
 	}
 	if query.From != nil && query.To != nil && query.From.After(*query.To) {
-		return Page{}, fmt.Errorf("%w: from must not be after to", ErrInvalidHistoryQuery)
+		return Page{}, fmt.Errorf("%w: `from` must not be after `to`", ErrInvalidHistoryQuery)
 	}
 
 	page, err := s.store.GetBookHistory(ctx, id, query)
@@ -149,31 +152,31 @@ func (s *Service) GetBookHistory(ctx context.Context, id string, query Query) (P
 
 func validateFields(fields Fields) error {
 	if strings.TrimSpace(fields.Title) == "" {
-		return fmt.Errorf("%w: title must not be empty", ErrInvalidFields)
+		return fmt.Errorf("%w: `title` must not be empty", ErrInvalidFields)
 	}
 	if utf8.RuneCountInString(fields.Title) > 200 {
-		return fmt.Errorf("%w: title exceeds 200 characters", ErrInvalidFields)
+		return fmt.Errorf("%w: `title` exceeds 200 characters", ErrInvalidFields)
 	}
 
 	if utf8.RuneCountInString(fields.Description) > 2000 {
-		return fmt.Errorf("%w: description exceeds 2000 characters", ErrInvalidFields)
+		return fmt.Errorf("%w: `description` exceeds 2000 characters", ErrInvalidFields)
 	}
 
 	date, err := time.Parse("2006-01-02", fields.PublicationDate)
 	if err != nil || date.Format("2006-01-02") != fields.PublicationDate {
-		return fmt.Errorf("%w: publication date must be YYYY-MM-DD", ErrInvalidFields)
+		return fmt.Errorf("%w: `publication_date` must be YYYY-MM-DD", ErrInvalidFields)
 	}
 
 	if len(fields.Authors) < 1 {
-		return fmt.Errorf("%w: provide at least 1 author", ErrInvalidFields)
+		return fmt.Errorf("%w: `authors` must contain at least 1 author", ErrInvalidFields)
 	}
 	seen := make(map[string]bool, len(fields.Authors))
 	for _, author := range fields.Authors {
 		if strings.TrimSpace(author) == "" || author != strings.TrimSpace(author) || utf8.RuneCountInString(author) > 200 {
-			return fmt.Errorf("%w: each author must contain 1 to 200 characters without surrounding whitespace", ErrInvalidFields)
+			return fmt.Errorf("%w: each `authors` entry must contain 1 to 200 characters without surrounding whitespace", ErrInvalidFields)
 		}
 		if seen[author] {
-			return fmt.Errorf("%w: duplicate author %q", ErrInvalidFields, author)
+			return fmt.Errorf("%w: `authors` contains duplicate %q", ErrInvalidFields, author)
 		}
 		seen[author] = true
 	}
