@@ -382,7 +382,7 @@ type ServerInterface interface {
 	// GetBookHistory Get the history of changes made to the book
 	// (GET /books/{id}/history)
 	GetBookHistory(w http.ResponseWriter, r *http.Request, id BookID, params GetBookHistoryParams)
-	// GetDocs Open interactive API UI
+	// GetDocs Redirect to the interactive API UI
 	// (GET /docs)
 	GetDocs(w http.ResponseWriter, r *http.Request)
 	// Health Check service health

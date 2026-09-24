@@ -165,14 +165,15 @@ paths:
   /docs:
     get:
       operationId: GetDocs
-      summary: Open interactive API UI
+      summary: Redirect to the interactive API UI
       tags: [System]
       responses:
-        "200":
-          description: Interactive API UI
-          content:
-            text/html:
-              schema: { type: string }
+        "301":
+          description: Redirect to the UI served at /docs/
+          headers:
+            Location:
+              description: URL of the interactive API UI
+              schema: { type: string, example: /docs/ }
         "4XX": { $ref: "#/components/responses/ClientError" }
 
 components:
@@ -204,7 +205,6 @@ components:
     Authors:
       type: array
       minItems: 1
-      maxItems: 20
       uniqueItems: true
       items: { type: string, minLength: 1, maxLength: 200 }
 

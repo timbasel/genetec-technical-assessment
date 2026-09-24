@@ -4,7 +4,8 @@ package api
 
 import (
 	"database/sql"
-	"embed"
+	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 
@@ -20,47 +21,62 @@ func NewServer(db *sql.DB, booksService *books.Service) *Server {
 	return &Server{db: db, books: booksService}
 }
 
-func (s *Server) GetBook(w http.ResponseWriter, r *http.Request, id BookID) {
-	log.Fatal("Unimplemented")
-}
-
-func (s *Server) CreateBook(w http.ResponseWriter, r *http.Request) {
-	log.Fatal("Unimplemented")
-}
-
-func (s *Server) UpdateBook(w http.ResponseWriter, r *http.Request, id BookID) {
-	log.Fatal("Unimplemented")
-}
-
-func (s *Server) GetBookHistory(w http.ResponseWriter, r *http.Request, id BookID, history GetBookHistoryParams) {
-	log.Fatal("Unimplemented")
-}
-
-func (s *Server) Health(w http.ResponseWriter, r *http.Request) {
-	if s.db == nil || s.db.PingContext(r.Context()) != nil {
-		http.Error(w, "database unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-}
-
-//go:embed openapi.yaml
-var OpenAPISpec []byte
-
-func (s *Server) GetOpenAPISpec(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/yaml")
-	w.Write(OpenAPISpec)
-}
-
-//go:embed docs/*
-var docs embed.FS
-
-func (s *Server) GetDocs(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/docs/", http.StatusMovedPermanently)
-}
-
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("GET /docs/", http.FileServerFS(docs))
-	return HandlerFromMux(s, mux)
+	registerDocs(mux)
+	return HandlerWithOptions(s, StdHTTPServerOptions{
+		BaseRouter: mux,
+		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		},
+	})
+}
+
+func writeRequestError(w http.ResponseWriter, err error) {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body exceeds 1 MiB")
+		return
+	}
+	writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+}
+
+func writeServiceError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, books.ErrInvalidFields), errors.Is(err, books.ErrInvalidHistoryQuery):
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+	case errors.Is(err, books.ErrNotFound):
+		writeError(w, http.StatusNotFound, "not_found", "book not found")
+	case errors.Is(err, books.ErrVersionConflict):
+		writeError(w, http.StatusConflict, "version_conflict", "book version conflict")
+	default:
+		log.Printf("API error: %v", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+	}
+}
+
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	response := ErrorResponse{}
+	response.Error.Code = code
+	response.Error.Message = message
+	writeJSON(w, status, response)
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		log.Printf("encode API response: %v", err)
+		w.Header().Del("Location")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		if _, err := w.Write(append([]byte(`{"error":{"code":"internal_error","message":"internal server error"}}`), '\n')); err != nil {
+			log.Printf("write API error response: %v", err)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if _, err := w.Write(append(body, '\n')); err != nil {
+		log.Printf("write API response: %v", err)
+	}
 }
