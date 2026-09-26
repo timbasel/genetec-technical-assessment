@@ -371,25 +371,25 @@ func (t *HistoryValue) UnmarshalJSON(b []byte) error {
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// CreateBook Create a new book
-	// (POST /books)
+	// (POST /api/books)
 	CreateBook(w http.ResponseWriter, r *http.Request)
 	// GetBook Retrieve a book
-	// (GET /books/{id})
+	// (GET /api/books/{id})
 	GetBook(w http.ResponseWriter, r *http.Request, id BookID)
 	// UpdateBook Update an existing book
-	// (PUT /books/{id})
+	// (PUT /api/books/{id})
 	UpdateBook(w http.ResponseWriter, r *http.Request, id BookID)
 	// GetBookHistory Get the history of changes made to the book
-	// (GET /books/{id}/history)
+	// (GET /api/books/{id}/history)
 	GetBookHistory(w http.ResponseWriter, r *http.Request, id BookID, params GetBookHistoryParams)
+	// Health Check service health
+	// (GET /api/healthz)
+	Health(w http.ResponseWriter, r *http.Request)
 	// GetDocs Redirect to the interactive API UI
 	// (GET /docs)
 	GetDocs(w http.ResponseWriter, r *http.Request)
-	// Health Check service health
-	// (GET /healthz)
-	Health(w http.ResponseWriter, r *http.Request)
 	// GetOpenAPISpec Retrieve the OpenAPI spec
-	// (GET /openapi.yaml)
+	// (GET /docs/openapi.yaml)
 	GetOpenAPISpec(w http.ResponseWriter, r *http.Request)
 }
 
@@ -588,11 +588,11 @@ func (siw *ServerInterfaceWrapper) GetBookHistory(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
-// GetDocs operation middleware
-func (siw *ServerInterfaceWrapper) GetDocs(w http.ResponseWriter, r *http.Request) {
+// Health operation middleware
+func (siw *ServerInterfaceWrapper) Health(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetDocs(w, r)
+		siw.Handler.Health(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -602,11 +602,11 @@ func (siw *ServerInterfaceWrapper) GetDocs(w http.ResponseWriter, r *http.Reques
 	handler.ServeHTTP(w, r)
 }
 
-// Health operation middleware
-func (siw *ServerInterfaceWrapper) Health(w http.ResponseWriter, r *http.Request) {
+// GetDocs operation middleware
+func (siw *ServerInterfaceWrapper) GetDocs(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.Health(w, r)
+		siw.Handler.GetDocs(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -750,13 +750,13 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/books", wrapper.CreateBook)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/books/{id}", wrapper.GetBook)
-	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/books/{id}", wrapper.UpdateBook)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/books/{id}/history", wrapper.GetBookHistory)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/healthz", wrapper.Health)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/openapi.yaml", wrapper.GetOpenAPISpec)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/books", wrapper.CreateBook)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/books/{id}", wrapper.GetBook)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/books/{id}", wrapper.UpdateBook)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/books/{id}/history", wrapper.GetBookHistory)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/healthz", wrapper.Health)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/docs", wrapper.GetDocs)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/docs/openapi.yaml", wrapper.GetOpenAPISpec)
 
 	return m
 }

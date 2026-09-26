@@ -10,12 +10,36 @@ Requires Go 1.27. From the repository root:
 go run ./cmd/server
 ```
 
-The server listens on `127.0.0.1:8080` and stores data in `data/books.db` by default. Set `BOOKS_HTTP_ADDRESS` or `BOOKS_DATABASE_PATH` to change them. Explore the API at http://127.0.0.1:8080/docs/. The OpenAPI spec is at http://127.0.0.1:8080/openapi.yaml.
+The server listens on `127.0.0.1:8080` and stores data in `data/books.db` by default. Set `HTTP_ADDRESS` or `DATABASE_PATH` to change them.
+The REST API is served under `/api/`. Explore the API at `/docs/`. The OpenAPI spec is at `/docs/openapi.yaml`.
 
 ## Test
 
 ```sh
 go test ./...
+```
+
+## Architecture
+
+```mermaid
+flowchart TB
+
+frontend [Frontend - Swagger UI]
+subgraph server [Server]
+  api [API]
+  books [Book Service]
+  health [Health Service]
+  store [Store]
+  sqlite[(SQLite)]
+end
+
+frontend --Rest API--> api
+frontend --/docs--> api
+api --> books
+api --> health
+books --> store
+health --> store
+store --> sqlite
 ```
 
 ## Design Decisions

@@ -24,7 +24,7 @@ tags:
     description: Health and documentation
 
 paths:
-  /books:
+  /api/books:
     post:
       operationId: CreateBook
       summary: Create a new book
@@ -54,7 +54,7 @@ paths:
         "413": { $ref: "#/components/responses/TooLarge" }
         "500": { $ref: "#/components/responses/InternalError" }
 
-  /books/{id}:
+  /api/books/{id}:
     parameters:
       - $ref: "#/components/parameters/BookID"
     get:
@@ -96,7 +96,7 @@ paths:
         "413": { $ref: "#/components/responses/TooLarge" }
         "500": { $ref: "#/components/responses/InternalError" }
 
-  /books/{id}/history:
+  /api/books/{id}/history:
     parameters:
       - $ref: "#/components/parameters/BookID"
     get:
@@ -139,7 +139,7 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "500": { $ref: "#/components/responses/InternalError" }
 
-  /healthz:
+  /api/healthz:
     get:
       operationId: Health
       summary: Check service health
@@ -148,19 +148,6 @@ paths:
         "200": { description: Healthy }
         "4XX": { $ref: "#/components/responses/ClientError" }
         "503": { description: Database unavailable }
-
-  /openapi.yaml:
-    get:
-      operationId: GetOpenAPISpec
-      summary: Retrieve the OpenAPI spec
-      tags: [System]
-      responses:
-        "200":
-          description: OpenAPI YAML
-          content:
-            application/yaml:
-              schema: { type: string }
-        "4XX": { $ref: "#/components/responses/ClientError" }
 
   /docs:
     get:
@@ -174,6 +161,19 @@ paths:
             Location:
               description: URL of the interactive API UI
               schema: { type: string, example: /docs/ }
+        "4XX": { $ref: "#/components/responses/ClientError" }
+
+  /docs/openapi.yaml:
+    get:
+      operationId: GetOpenAPISpec
+      summary: Retrieve the OpenAPI spec
+      tags: [System]
+      responses:
+        "200":
+          description: OpenAPI YAML
+          content:
+            application/yaml:
+              schema: { type: string }
         "4XX": { $ref: "#/components/responses/ClientError" }
 
 components:

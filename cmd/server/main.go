@@ -14,6 +14,7 @@ import (
 
 	"github.com/timbasel/genetec-technical-assessment/internal/api"
 	"github.com/timbasel/genetec-technical-assessment/internal/books"
+	"github.com/timbasel/genetec-technical-assessment/internal/health"
 	"github.com/timbasel/genetec-technical-assessment/internal/store"
 	"github.com/timbasel/genetec-technical-assessment/internal/utils"
 )
@@ -29,13 +30,13 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	db, err := store.Open(ctx, utils.GetEnv("BOOKS_DATABASE_PATH", "data/books.db"))
+	store, err := store.Open(ctx, utils.GetEnv("DATABASE_PATH", "data/books.db"))
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
-	defer db.Close()
+	defer store.Close()
 
-	addr := utils.GetEnv("BOOKS_HTTP_ADDRESS", "127.0.0.1:8080")
+	addr := utils.GetEnv("HTTP_ADDRESS", "127.0.0.1:8080")
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", addr, err)
@@ -44,7 +45,7 @@ func run() error {
 
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewServer(db.DB, books.NewService(db)).Handler(),
+		Handler:           api.NewServer(books.NewService(store), health.NewService(store)).Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

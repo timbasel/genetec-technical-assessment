@@ -3,22 +3,22 @@
 package api
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
 
 	"github.com/timbasel/genetec-technical-assessment/internal/books"
+	"github.com/timbasel/genetec-technical-assessment/internal/health"
 )
 
 type Server struct {
-	db    *sql.DB
-	books *books.Service
+	books  *books.Service
+	health *health.Service
 }
 
-func NewServer(db *sql.DB, booksService *books.Service) *Server {
-	return &Server{db: db, books: booksService}
+func NewServer(books *books.Service, health *health.Service) *Server {
+	return &Server{books: books, health: health}
 }
 
 func (s *Server) Handler() http.Handler {

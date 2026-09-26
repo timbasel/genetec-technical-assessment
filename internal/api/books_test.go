@@ -11,6 +11,7 @@ import (
 
 	"github.com/timbasel/genetec-technical-assessment/internal/api"
 	"github.com/timbasel/genetec-technical-assessment/internal/books"
+	"github.com/timbasel/genetec-technical-assessment/internal/health"
 	"github.com/timbasel/genetec-technical-assessment/internal/store"
 )
 
@@ -18,12 +19,12 @@ const validBook = `{"title":"The Hobbitt","description":"An adventure","publicat
 
 func bookHandler(t *testing.T) http.Handler {
 	t.Helper()
-	db, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "books.db"))
+	store, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "books.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
-	return api.NewServer(db.DB, books.NewService(db)).Handler()
+	t.Cleanup(func() { store.Close() })
+	return api.NewServer(books.NewService(store), health.NewService(store)).Handler()
 }
 
 func apiRequest(t *testing.T, handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
@@ -49,7 +50,7 @@ func requireStatus(t *testing.T, response *httptest.ResponseRecorder, want int) 
 
 func TestBookRoutes(t *testing.T) {
 	handler := bookHandler(t)
-	created := apiRequest(t, handler, http.MethodPost, "/books", validBook)
+	created := apiRequest(t, handler, http.MethodPost, "/api/books", validBook)
 	requireStatus(t, created, http.StatusCreated)
 	var book api.Book
 	if err := json.Unmarshal(created.Body.Bytes(), &book); err != nil {
@@ -68,13 +69,13 @@ func TestBookRoutes(t *testing.T) {
 		t.Fatalf("response lacks publication_date: %s", created.Body.String())
 	}
 
-	got := apiRequest(t, handler, http.MethodGet, "/books/"+id, "")
+	got := apiRequest(t, handler, http.MethodGet, "/api/books/"+id, "")
 	requireStatus(t, got, http.StatusOK)
 	if got.Body.String() != created.Body.String() {
 		t.Fatalf("GET book = %s, want %s", got.Body.String(), created.Body.String())
 	}
 
-	initial := apiRequest(t, handler, http.MethodGet, "/books/"+id+"/history", "")
+	initial := apiRequest(t, handler, http.MethodGet, "/api/books/"+id+"/history", "")
 	requireStatus(t, initial, http.StatusOK)
 	var page api.HistoryPage
 	if err := json.Unmarshal(initial.Body.Bytes(), &page); err != nil {
@@ -85,7 +86,7 @@ func TestBookRoutes(t *testing.T) {
 		t.Fatalf("initial history = %+v", page)
 	}
 
-	updated := apiRequest(t, handler, http.MethodPut, "/books/"+id,
+	updated := apiRequest(t, handler, http.MethodPut, "/api/books/"+id,
 		`{"title":"The Hobbit","description":"An adventure","publication_date":"1937-09-21","authors":["J.R.R. Tolkien","Second Author"],"version":1}`)
 	requireStatus(t, updated, http.StatusOK)
 	if err := json.Unmarshal(updated.Body.Bytes(), &book); err != nil {
@@ -95,7 +96,7 @@ func TestBookRoutes(t *testing.T) {
 		t.Fatalf("updated book = %+v", book)
 	}
 
-	filtered := apiRequest(t, handler, http.MethodGet, "/books/"+id+"/history?kind=updated&field=title&order=asc&limit=1", "")
+	filtered := apiRequest(t, handler, http.MethodGet, "/api/books/"+id+"/history?kind=updated&field=title&order=asc&limit=1", "")
 	requireStatus(t, filtered, http.StatusOK)
 	if err := json.Unmarshal(filtered.Body.Bytes(), &page); err != nil {
 		t.Fatal(err)
@@ -113,7 +114,7 @@ func TestBookRoutes(t *testing.T) {
 		t.Fatalf("new title = %q, error = %v", newTitle, err)
 	}
 
-	authorHistory := apiRequest(t, handler, http.MethodGet, "/books/"+id+"/history?kind=updated&field=authors", "")
+	authorHistory := apiRequest(t, handler, http.MethodGet, "/api/books/"+id+"/history?kind=updated&field=authors", "")
 	requireStatus(t, authorHistory, http.StatusOK)
 	if err := json.Unmarshal(authorHistory.Body.Bytes(), &page); err != nil {
 		t.Fatal(err)
@@ -126,7 +127,7 @@ func TestBookRoutes(t *testing.T) {
 		t.Fatalf("new authors = %q, error = %v", authors, err)
 	}
 
-	all := apiRequest(t, handler, http.MethodGet, "/books/"+id+"/history?limit=2&offset=1", "")
+	all := apiRequest(t, handler, http.MethodGet, "/api/books/"+id+"/history?limit=2&offset=1", "")
 	requireStatus(t, all, http.StatusOK)
 	if err := json.Unmarshal(all.Body.Bytes(), &page); err != nil {
 		t.Fatal(err)
@@ -135,7 +136,7 @@ func TestBookRoutes(t *testing.T) {
 		t.Fatalf("paginated history = %+v", page)
 	}
 
-	stale := apiRequest(t, handler, http.MethodPut, "/books/"+id,
+	stale := apiRequest(t, handler, http.MethodPut, "/api/books/"+id,
 		`{"title":"Wrong","description":"An adventure","publication_date":"1937-09-21","authors":["J.R.R. Tolkien"],"version":1}`)
 	requireStatus(t, stale, http.StatusConflict)
 }
@@ -147,27 +148,27 @@ func TestBookRouteErrors(t *testing.T) {
 		name, method, path, body string
 		status                   int
 	}{
-		{"missing title", http.MethodPost, "/books", `{"description":"A","publication_date":"1937-09-21","authors":["Tolkien"]}`, 400},
-		{"missing description", http.MethodPost, "/books", `{"title":"The Hobbit","publication_date":"1937-09-21","authors":["Tolkien"]}`, 400},
-		{"null description", http.MethodPost, "/books", `{"title":"The Hobbit","description":null,"publication_date":"1937-09-21","authors":["Tolkien"]}`, 400},
-		{"unknown field", http.MethodPost, "/books", `{"title":"The Hobbit","description":"A","publication_date":"1937-09-21","authors":["Tolkien"],"extra":1}`, 400},
-		{"bad date", http.MethodPost, "/books", `{"title":"The Hobbit","description":"A","publication_date":"1937-02-30","authors":["Tolkien"]}`, 400},
-		{"duplicate authors", http.MethodPost, "/books", `{"title":"The Hobbit","description":"A","publication_date":"1937-09-21","authors":["Tolkien","Tolkien"]}`, 400},
-		{"multiple objects", http.MethodPost, "/books", validBook + validBook, 400},
-		{"empty body", http.MethodPost, "/books", "", 400},
-		{"too large", http.MethodPost, "/books", validBook + strings.Repeat(" ", 1<<20), 413},
-		{"invalid id", http.MethodGet, "/books/not-a-uuid", "", 400},
-		{"missing book", http.MethodGet, "/books/" + missing, "", 404},
-		{"missing update version", http.MethodPut, "/books/" + missing, validBook, 400},
-		{"missing update book", http.MethodPut, "/books/" + missing, `{"title":"A","description":"","publication_date":"1937-09-21","authors":["Tolkien"],"version":1}`, 404},
-		{"missing history", http.MethodGet, "/books/" + missing + "/history", "", 404},
-		{"invalid limit", http.MethodGet, "/books/" + missing + "/history?limit=0", "", 400},
-		{"invalid order", http.MethodGet, "/books/" + missing + "/history?order=sideways", "", 400},
-		{"empty kind", http.MethodGet, "/books/" + missing + "/history?kind=", "", 400},
-		{"empty field", http.MethodGet, "/books/" + missing + "/history?field=", "", 400},
-		{"empty order", http.MethodGet, "/books/" + missing + "/history?order=", "", 400},
-		{"invalid timestamp", http.MethodGet, "/books/" + missing + "/history?from=nope", "", 400},
-		{"empty timestamp", http.MethodGet, "/books/" + missing + "/history?from=", "", 400},
+		{"missing title", http.MethodPost, "/api/books", `{"description":"A","publication_date":"1937-09-21","authors":["Tolkien"]}`, 400},
+		{"missing description", http.MethodPost, "/api/books", `{"title":"The Hobbit","publication_date":"1937-09-21","authors":["Tolkien"]}`, 400},
+		{"null description", http.MethodPost, "/api/books", `{"title":"The Hobbit","description":null,"publication_date":"1937-09-21","authors":["Tolkien"]}`, 400},
+		{"unknown field", http.MethodPost, "/api/books", `{"title":"The Hobbit","description":"A","publication_date":"1937-09-21","authors":["Tolkien"],"extra":1}`, 400},
+		{"bad date", http.MethodPost, "/api/books", `{"title":"The Hobbit","description":"A","publication_date":"1937-02-30","authors":["Tolkien"]}`, 400},
+		{"duplicate authors", http.MethodPost, "/api/books", `{"title":"The Hobbit","description":"A","publication_date":"1937-09-21","authors":["Tolkien","Tolkien"]}`, 400},
+		{"multiple objects", http.MethodPost, "/api/books", validBook + validBook, 400},
+		{"empty body", http.MethodPost, "/api/books", "", 400},
+		{"too large", http.MethodPost, "/api/books", validBook + strings.Repeat(" ", 1<<20), 413},
+		{"invalid id", http.MethodGet, "/api/books/not-a-uuid", "", 400},
+		{"missing book", http.MethodGet, "/api/books/" + missing, "", 404},
+		{"missing update version", http.MethodPut, "/api/books/" + missing, validBook, 400},
+		{"missing update book", http.MethodPut, "/api/books/" + missing, `{"title":"A","description":"","publication_date":"1937-09-21","authors":["Tolkien"],"version":1}`, 404},
+		{"missing history", http.MethodGet, "/api/books/" + missing + "/history", "", 404},
+		{"invalid limit", http.MethodGet, "/api/books/" + missing + "/history?limit=0", "", 400},
+		{"invalid order", http.MethodGet, "/api/books/" + missing + "/history?order=sideways", "", 400},
+		{"empty kind", http.MethodGet, "/api/books/" + missing + "/history?kind=", "", 400},
+		{"empty field", http.MethodGet, "/api/books/" + missing + "/history?field=", "", 400},
+		{"empty order", http.MethodGet, "/api/books/" + missing + "/history?order=", "", 400},
+		{"invalid timestamp", http.MethodGet, "/api/books/" + missing + "/history?from=nope", "", 400},
+		{"empty timestamp", http.MethodGet, "/api/books/" + missing + "/history?from=", "", 400},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
