@@ -3,9 +3,11 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/timbasel/genetec-technical-assessment/internal/books"
 )
@@ -89,4 +91,86 @@ func (s *Store) GetBookHistory(ctx context.Context, bookID string, query books.Q
 		return books.Page{}, fmt.Errorf("commit history transaction: %w", err)
 	}
 	return page, nil
+}
+
+func insertBookChange(ctx context.Context, tx *sql.Tx, bookID string, change books.Change) error {
+	var oldValue any
+	if change.OldValue != nil {
+		encoded, err := json.Marshal(change.OldValue)
+		if err != nil {
+			return fmt.Errorf("encode old `%s` value: %w", change.Field, err)
+		}
+		oldValue = encoded
+	}
+
+	newValue, err := json.Marshal(change.NewValue)
+	if err != nil {
+		return fmt.Errorf("encode new `%s` value: %w", change.Field, err)
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO books_history(book_id, occurred_at, kind, field, old_value, new_value, description)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		bookID,
+		change.OccurredAt.UnixNano(),
+		change.Kind,
+		change.Field,
+		oldValue,
+		newValue,
+		change.Description,
+	)
+	return err
+}
+
+func scanBookChange(row RowScanner, change *books.Change) error {
+	var occurredAt int64
+	var oldValue sql.NullString
+	var newValue string
+
+	if err := row.Scan(
+		&change.ID,
+		&change.BookID,
+		&occurredAt,
+		&change.Kind,
+		&change.Field,
+		&oldValue,
+		&newValue,
+		&change.Description,
+	); err != nil {
+		return err
+	}
+
+	change.OccurredAt = time.Unix(0, occurredAt).UTC()
+	var err error
+	if oldValue.Valid {
+		change.OldValue, err = decodeBookChangeValue(change.Field, []byte(oldValue.String))
+		if err != nil {
+			return fmt.Errorf("decode old `%s` value: %w", change.Field, err)
+		}
+	}
+	change.NewValue, err = decodeBookChangeValue(change.Field, []byte(newValue))
+	if err != nil {
+		return fmt.Errorf("decode new `%s` value: %w", change.Field, err)
+	}
+
+	return nil
+}
+
+func decodeBookChangeValue(field string, value []byte) (any, error) {
+	switch field {
+	case "title", "description", "publication_date":
+		var decoded string
+		if err := json.Unmarshal(value, &decoded); err != nil {
+			return nil, err
+		}
+		return decoded, nil
+	case "authors":
+		var decoded []string
+		if err := json.Unmarshal(value, &decoded); err != nil {
+			return nil, err
+		}
+		return decoded, nil
+	default:
+		return nil, fmt.Errorf("unknown `field` value %q", field)
+	}
 }

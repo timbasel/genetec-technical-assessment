@@ -22,7 +22,7 @@ func (s *Store) CreateBook(ctx context.Context, book books.Book, changes []books
 		return fmt.Errorf("insert book: %w", err)
 	}
 	for _, change := range changes {
-		if err := insertChange(ctx, tx, book.ID, change); err != nil {
+		if err := insertBookChange(ctx, tx, book.ID, change); err != nil {
 			return fmt.Errorf("insert book change: %w", err)
 		}
 	}
@@ -64,7 +64,7 @@ func (s *Store) UpdateBook(ctx context.Context, book books.Book, changes []books
 		return fmt.Errorf("update book: %w", err)
 	}
 	for _, change := range changes {
-		if err := insertChange(ctx, tx, book.ID, change); err != nil {
+		if err := insertBookChange(ctx, tx, book.ID, change); err != nil {
 			return fmt.Errorf("insert book change: %w", err)
 		}
 	}
@@ -134,35 +134,6 @@ func insertBook(ctx context.Context, tx *sql.Tx, book books.Book) error {
 	return err
 }
 
-func insertChange(ctx context.Context, tx *sql.Tx, bookID string, change books.Change) error {
-	var oldValue any
-	if change.OldValue != nil {
-		encoded, err := json.Marshal(change.OldValue)
-		if err != nil {
-			return fmt.Errorf("encode old `%s` value: %w", change.Field, err)
-		}
-		oldValue = encoded
-	}
-
-	newValue, err := json.Marshal(change.NewValue)
-	if err != nil {
-		return fmt.Errorf("encode new `%s` value: %w", change.Field, err)
-	}
-
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO books_history(book_id, occurred_at, kind, field, old_value, new_value, description)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		bookID,
-		change.OccurredAt.UnixNano(),
-		change.Kind,
-		change.Field,
-		oldValue,
-		newValue,
-		change.Description,
-	)
-	return err
-}
-
 func scanBook(row RowScanner, book *books.Book) error {
 	var authors []byte
 	var createdAt int64
@@ -190,57 +161,4 @@ func scanBook(row RowScanner, book *books.Book) error {
 	book.UpdatedAt = time.Unix(0, updatedAt).UTC()
 
 	return nil
-}
-
-func scanBookChange(row RowScanner, change *books.Change) error {
-	var occurredAt int64
-	var oldValue sql.NullString
-	var newValue string
-
-	if err := row.Scan(
-		&change.ID,
-		&change.BookID,
-		&occurredAt,
-		&change.Kind,
-		&change.Field,
-		&oldValue,
-		&newValue,
-		&change.Description,
-	); err != nil {
-		return err
-	}
-
-	change.OccurredAt = time.Unix(0, occurredAt).UTC()
-	var err error
-	if oldValue.Valid {
-		change.OldValue, err = decodeChangeValue(change.Field, []byte(oldValue.String))
-		if err != nil {
-			return fmt.Errorf("decode old `%s` value: %w", change.Field, err)
-		}
-	}
-	change.NewValue, err = decodeChangeValue(change.Field, []byte(newValue))
-	if err != nil {
-		return fmt.Errorf("decode new `%s` value: %w", change.Field, err)
-	}
-
-	return nil
-}
-
-func decodeChangeValue(field string, value []byte) (any, error) {
-	switch field {
-	case "title", "description", "publication_date":
-		var decoded string
-		if err := json.Unmarshal(value, &decoded); err != nil {
-			return nil, err
-		}
-		return decoded, nil
-	case "authors":
-		var decoded []string
-		if err := json.Unmarshal(value, &decoded); err != nil {
-			return nil, err
-		}
-		return decoded, nil
-	default:
-		return nil, fmt.Errorf("unknown `field` value %q", field)
-	}
 }
